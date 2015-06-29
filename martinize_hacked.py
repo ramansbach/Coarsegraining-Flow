@@ -5197,6 +5197,7 @@ Martini system from %s
     print "\n\tThere you are. One MARTINI. Shaken, not stirred.\n"
     Q = martiniq.pop(random.randint(0,len(martiniq)-1))
     print "\n", Q[1], "\n%80s"%("--"+Q[0]), "\n"
+
 if __name__ == '__main__':
     import sys,logging
     args = sys.argv[1:]
@@ -5207,6 +5208,8 @@ if __name__ == '__main__':
     # Get the possible commandline arguments arguments and help text. 
     options,lists = options,lists
     # Parse commandline options.
+    opts,lists = options,lists
     options = option_parser(args,options,lists,version)
+ 
+    main(options) 
 
-    main(options)
