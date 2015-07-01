@@ -88,5 +88,64 @@ renameRes();
 println("Currently, need to run martinize_hacked.py by hand to get this thing to work.");
 
 
+function reBond(inname,outname,ind1)
+#pull in .itp file, remove all incorrect bonds (with indices remapped)
+#also add new correct bonds (indices still remapped)
+#currently only works for DFAX series--may want to expand for aromatics in general?
+	remBonds = [(1,2),(5,6),(10,11),(1,4),(4,5),(5,8),(8,9),(9,10),(10,13),(2,3),(2,4),(6,7),(6,8),(11,12),(11,13)];
+	addBB = reshape([3,4,4,5,7,8,8,12,10,9,9,13],2,6)';
+	addC = reshape([1,2,1,3,2,3,5,7,5,6,6,7,12,10,12,11,11,10],2,9)';
+	for i = 1:length(remBonds)
+		remBonds[i] = (remBonds[i][1]+ind1,remBonds[i][2]+ind1);
+	end
+	println(remBonds);
+	addBB+=ind1;
+	addC+=ind1;
+	inf = open(inname);
+	outf = open(outname,"w");
+	for line in eachline(inf)
+		if line=="; Backbone bonds\n"
+			write(outf,line);
+			for i = 1:size(addBB)[1]
+			
+				@printf(outf,"%5d %5d %6d   %5.5f %5d ; \n",addBB[i,1],addBB[i,2],1,0.35,1250);
+				
+			end
+		elseif line=="[ constraints ]\n"
+			write(outf,line);
+			#println(addC);
+			for i = 1:size(addC)[1]
+				#println(i)
+				#println((addC[i][1],addC[i][2]));
+				@printf(outf,"%5d %5d %6d   %5.5f ; \n",addC[i,1],addC[i,2],1,0.27);
+			end
+		
+		else
+			
+			if ismatch(r"\s+\d+\s+\d+\s+\d+\s+\d+\.\d+\s+;",line) || ismatch(r"\s+\d+\s+\d+\s+\d+\s+\d+\.\d+\s+\d+\s+;",line)
+				spline = split(line)
+				bond = (int(spline[1]),int(spline[2]));
+				#println("bond is: ");
+				#println(bond);
+				#println("searching in: ");
+				#println(remBonds);
+				#println("checking",line);
+				#println("bond is: ",bond);
+				#println("remBonds is:", remBonds);
+				remBond = in(bond,remBonds);
+				if !(remBond)
+					write(outf,line);
+				else
+					println("not writing out",line);
+				end
+			else
+				write(outf,line);
+			end
+	
+		end
 
+	end
+close(inf);
+close(outf);
+end
 #fix bonds/angles/dihedrals in the .itp file
