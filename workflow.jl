@@ -1,7 +1,9 @@
 #A julia file to organize coarsegraining of the DFAX series
 #rename all residues of .pdb file
-using MATLAB
+
 module CGWorkflow
+using MATLAB
+using PyPlot
 function parseDict(filename)
 r = open(filename);
 resDict = (String => String)[];
@@ -42,6 +44,7 @@ for line in eachline(f)
 		end
 
 		if val[end] == 'r'
+			#println(val);
 			key = join([key," "]);
 		end
 		if length(key) < length(val)
@@ -50,7 +53,7 @@ for line in eachline(f)
 		outline = replace(line,key,val);
 		#println(val);
 		#println(splitline[3]);
-		if ((val == "COP") && ((splitline[3] == "C") || (splitline[3]) == "O"))			
+		if ((contains(val,"COP")) && ((splitline[3] == "C") || (splitline[3]) == "O"))			
 			#println("dealing with COA");
 			#take care of the special COA residue
 			val = "COA";
@@ -78,6 +81,8 @@ for line in eachline(f)
 		write(o,line);
 	end
 end
+close(o);
+close(f);
 #println("Go edit formatting on testDFAImod.pdb.  Still working on this stupid bug.");
 end
 
@@ -604,7 +609,7 @@ function copBB(inname,outname)
 	inf = open(inname);
 	outf = open(outname,"w");
 	for line in eachline(inf)
-		if contains(line,"COP") && contains(line,"SC2")
+		if (contains(line,"COP") || contains(line,"BEN")) && contains(line,"SC2")
 			line = replace(line,"SC2"," BB");
 		end
 		write(outf,line);
@@ -719,9 +724,81 @@ function allSymList(symDict,bbBeadOrder)
 	return bondsyms,angsyms,dihsyms;
 end
 
+function writeVotcaInputNS(T,outfilename,topname)
+	#function that computes the list of bonds to write out to a VOTCA file and does so for each separate bond/angle/dihedral
+	angreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+;";
+        dihreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+[0-9a-zA-Z]+\s+[0-9a-zA-Z]+\s+[0-9a-zA-Z]+\s+;";
+	allbonds = readallbonds(topname);
+	allangs = readallX(topname,angreg,true);
+	alldihs = readallX(topname,dihreg,false);
+	outf = open(outfilename,"w");
+	@printf(outf,"tab set T %3d\n",T);
+	@printf(outf,"tab set scale bond\n");
+#	sbind = 1;
+	tabstrb = "tab bX.pot";
+	tabstra = "tab aX.pot";
+	tabstrd = "tab dX.pot";
+	hstrb = "hist hbX.dat";
+	hstra = "hist haX.dat";
+	hstrd = "hist hdX.dat";
+	vstrb = "vals vbX.dat";
+	vstra = "vals vaX.dat";
+	vstrd = "vals vdX.dat";
+	println(length(allbonds))
+	for i=1:length(allbonds)
+		tabout = replace(tabstrb,"X",string(i));
+		hout = replace(hstrb,"X",string(i));
+		vout = replace(vstrb,"X",string(i));
+		tabout = tabout*" *:bX:*";
+		tabout = replace(tabout,"X",string(i));
+		hout = hout*" *:bX:*";
+		hout = replace(hout,"X",string(i));
+		vout = vout*" *:bX:*";
+		vout = replace(vout,"X",string(i));
+		write(outf,tabout*"\n");
+		write(outf,hout*"\n");
+		write(outf,vout*"\n");
+	end
+	@printf(outf,"tab set scale angle\n");
+	for i=1:length(allangs)
+		tabout = replace(tabstra,"X",string(i));
+		hout = replace(hstra,"X",string(i));
+		vout = replace(vstra,"X",string(i));
+		tabout = tabout*" *:aX:*";
+		tabout = replace(tabout,"X",string(i));
+		hout = hout*" *:aX:*";
+		hout = replace(hout,"X",string(i));
+		vout = vout*" *:aX:*";
+		vout = replace(vout,"X",string(i));
+		write(outf,tabout*"\n");
+		write(outf,hout*"\n");
+		write(outf,vout*"\n");
+	end
+	@printf(outf,"tab set scale no\n");
+	for i=1:length(alldihs)
+		tabout = replace(tabstrd,"X",string(i));
+		hout = replace(hstrd,"X",string(i));
+		vout = replace(vstrd,"X",string(i));
+		tabout = tabout*" *:dX:*";
+		tabout = replace(tabout,"X",string(i));
+		hout = hout*" *:dX:*";
+		hout = replace(hout,"X",string(i));
+		vout = vout*" *:dX:*";
+		vout = replace(vout,"X",string(i));
+		write(outf,tabout*"\n");
+		write(outf,hout*"\n");
+		write(outf,vout*"\n");
+	end
+	close(outf);
+end
+
 function writeVotcaInput(symDict,bbBeadOrder,T,outfilename,topname)
 	#function that computes the list of bonds to write out to a VOTCA file, matches those to their corresponding index, and writes out a VOTCA input file to compute all (symmetric) bond data
-        angreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+;";
+        #also returns a dictionary which matches a given bond to its symmetric table number (so for example if the bs1.pot contains bonds 15 and 18 (by line in topology), the dictionary contains 15=>1 and 18=>1 and the same for angles and dihs
+	bondDict = Dict();
+	angDict = Dict();
+	dihDict = Dict();
+	angreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+;";
 	dihreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+[0-9a-zA-Z]+\s+[0-9a-zA-Z]+\s+[0-9a-zA-Z]+\s+;";	
 	bondsyms,angsyms,dihsyms = allSymList(symDict,bbBeadOrder);
  	allbonds = readallbonds(topname);	#these bonds come in as a list of tuples, need to be careful when checking
@@ -746,21 +823,30 @@ function writeVotcaInput(symDict,bbBeadOrder,T,outfilename,topname)
 		tabout = replace(tabstrb,"X",string(sbind));
 		hout = replace(hstrb,"X",string(sbind));
 		vout = replace(vstrb,"X",string(sbind));
+		#tabout = tabstrb;
+		#hout = hstrb;
+		#vout = vstrb;
+		tabnum = "";
 		for bond in symbond
 			bind = inListRev((bond[1],bond[2]),allbonds);
 			if bind == -1
 				println("Error.  Bond ",bond," in symmetric bond list not found in full bond list.  Check bonds.");
 				return;
 			else
-				tabout = tabout*" *:bX:*";
-				tabout = replace(tabout,"X",string(bind));
-				hout = hout*" *:bX:*";
-				hout = replace(hout,"X",string(bind));
-				vout = vout*" *:bX:*";
-				vout = replace(vout,"X",string(bind));
+				#tabnum = tabnum*"_"*string(bind);
+				tabout = tabout*" *:bY:*";
+				tabout = replace(tabout,"Y",string(bind));
+				hout = hout*" *:bY:*";
+				hout = replace(hout,"Y",string(bind));
+				vout = vout*" *:bY:*";
+				vout = replace(vout,"Y",string(bind));
+				bondDict[bind] = sbind;
 			end
 			
 		end
+		#tabout = replace(tabout,"X",tabnum);
+		#hout = replace(hout,"X",tabnum);
+		#vout = replace(vout,"X",tabnum);
 		write(outf,tabout*"\n");
 		write(outf,hout*"\n");
 		write(outf,vout*"\n");
@@ -772,21 +858,30 @@ function writeVotcaInput(symDict,bbBeadOrder,T,outfilename,topname)
 		tabout = replace(tabstra,"X",string(saind));
 		hout = replace(hstra,"X",string(saind));
 		vout = replace(vstra,"X",string(saind));
+		#tabout = tabstra;
+		#hout = hstra;
+		#vout = vstra;
+		tabnum = "";
 		for ang in symang
 			aind = inListRev((ang[1],ang[2],ang[3]),allangs);
 			if aind == -1
 				println("Error.  Angle ",ang," in symmetric angle list not found in full angle list.  Check angles.");
 				return;
 			else
-				tabout = tabout*" *:aX:*";
-				tabout = replace(tabout,"X",string(aind));
-				hout = hout*" *:aX:*";
-				hout = replace(hout,"X",string(aind));
-				vout = vout*" *:aX:*";
-				vout = replace(vout,"X",string(aind));
+				#tabnum = tabnum*"_"*string(aind);
+				tabout = tabout*" *:aY:*";
+				tabout = replace(tabout,"Y",string(aind));
+				hout = hout*" *:aY:*";
+				hout = replace(hout,"Y",string(aind));
+				vout = vout*" *:aY:*";
+				vout = replace(vout,"Y",string(aind));
+				angDict[aind] = saind;
 			end
 			
 		end
+		#tabout = replace(tabout,"X",tabnum);
+		#hout = replace(hout,"X",tabnum);
+		#vout = replace(hout,"X",tabnum);
 		write(outf,tabout*"\n");
 		write(outf,hout*"\n");
 		write(outf,vout*"\n");
@@ -798,27 +893,37 @@ function writeVotcaInput(symDict,bbBeadOrder,T,outfilename,topname)
 		tabout = replace(tabstrd,"X",string(sdind));
 		hout = replace(hstrd,"X",string(sdind));
 		vout = replace(vstrd,"X",string(sdind));
+		#tabout = tabstrd;
+		#hout = hstrd;
+		#vout = vstrd;
+		tabnum = "";
 		for dih in symdih
 			dind = inListRev((dih[1],dih[2],dih[3],dih[4]),alldihs);
 			if dind == -1
 				println("Error.  Dihedral ",dih," in symmetric dihedral list not found in full dihedral list.  Check dihedrals.");
 				return;
 			else
-				tabout = tabout*" *:dX:*";
-				tabout = replace(tabout,"X",string(dind));
-				hout = hout*" *:dX:*";
-				hout = replace(hout,"X",string(dind));
-				vout = vout*" *:dX:*";
-				vout = replace(vout,"X",string(dind));
+				#tabnum = tabnum*"_"*string(dind);
+				tabout = tabout*" *:dY:*";
+				tabout = replace(tabout,"Y",string(dind));
+				hout = hout*" *:dY:*";
+				hout = replace(hout,"Y",string(dind));
+				vout = vout*" *:dY:*";
+				vout = replace(vout,"Y",string(dind));
+				dihDict[dind] = sdind;
 			end
 			
 		end
+		#tabout = replace(tabout,"X",tabnum);
+		#hout = replace(hout,"X",tabnum);
+		#vout = replace(vout,"X",tabnum);
 		write(outf,tabout*"\n");
 		write(outf,hout*"\n");
 		write(outf,vout*"\n");
 		sdind+=1;
 	end
-	close(outf);	
+	close(outf);
+	return bondDict,angDict,dihDict;	
 end
 
 #need to go to votca and be able to call  (cat inputfile.txt) | csg_boltzmann --top md.tpr --trj md.xtc --cg "CGDFAG.xml;water.xml"
@@ -830,26 +935,103 @@ end
 #the bond order when we were rebonding? Ah, yes, that's right, so that should be fine, because the .xml file will match the CG file
 #Just bear it in mind.  But yeah if we can just add BB dihedrals, we'll have a solid .xml file
 #We should just be able to write the dihedrals into the CG .top file and that'll do well enough?
-function main(prompts=true)
+
+function compareHistos(f1,f2)
+	#compares the data in two files assumed to be written in the form column 1 column 2 where column 1 is the x axis and column 2 is the y axis of a normalized histogram
+	rf1 = open(f1);
+	rf2 = open(f2);
+	h1 = readlines(rf1);
+	h2 = readlines(rf2);
+	close(rf1);
+	close(rf2);
+	#data is now read in as a set of lines in an array
+	#put into numerical vectors, start by preallocating
+	h1x = Array(Float64,length(h1));
+	h1y = Array(Float64,length(h1));
+	h2x = Array(Float64,length(h2));
+	h2y = Array(Float64,length(h2));
+	count = 1;
+	for line in h1
+		line = split(chomp(line));
+		h1x[count] = float(line[1]);
+		h1y[count] = float(line[2]);
+		count+=1;
+	end
+	count = 1;
+	for line in h2
+		line = split(chomp(line));
+		h2x[count] = float(line[1]);
+		h2y[count] = float(line[2]);
+		count+=1;
+	end
+	fig = figure("compare_histo");
+	ax = axes();
+	b1 = bar(h1x,h1y,color="blue",align="center",alpha=0.4,width=h1x[2]-h1x[1]);
+	b2 = bar(h2x,h2y,color="red",align="center",alpha=0.4,width=h2x[2]-h2x[1]);
+
+end
+function readValues(filename)
+	#function that reads necessary values from an input file and then saves them in a dictionary of variables
+	valueDict = Dict();
+	valueFile = open(filename);
+	for line in eachline(valueFile)
+		spline = split(line);
+		#println(spline);
+		if length(spline)==3
+			valueDict[spline[1]] = spline[3];
+		end
+	end
+	return valueDict;
+end
+
+function strListToIntList(strlist,divider=",")
+#a helper function that takes a string of ints ie "1,2,3" and turns it into an int list
+strlist = split(strlist,divider);
+intlist = Array(Int,length(strlist));
+for i = 1:length(strlist)
+	intlist[i] = int(strlist[i]);
+end
+return intlist;
+end
+
+function main(prompts=true,readfile=true,filename="workflowInput.txt")
 	#set default values
-	prepform = "y";
-	pdbname = "testDFAI";
-	rdictname = "resDict.txt";
-	cdictname = "CAdict.txt";
-	itpcorr = "y";
-	ind1 = 10;
-	outxml = "CG_DFAI.xml";
-	AAtop = "DFAI.top";
-	CGtop = "Protein_rebond_reangle_reBB.itp";
-	map = "mapping.ndx";
-	bbs = [1,3,7,8,10,11,13,14,15,17,18,22,20,19,23,25,26,30]; #list of back-bone beads in order, currently hardcoded for DFAI
-	symdictname = "DFAIsymdict.txt";
-	votcainputname = "DFAIvotcasyminput.txt";
-	mdtop = "/home/rachael/cluster/scratch/ramansbach/coarsegraining/AA/DFAI/4_md/md.tpr";
-	mdtrj = "/home/rachael/cluster/scratch/ramansbach/coarsegraining/AA/DFAI/4_md/md.xtc";
-	T=298; #temperature to run VOTCA at
+	if ~readfile
+	valueDict = Dict();
+	valueDict["workingDir"] = "/home/rachael/Analysis_and_run_code/coarsegraining/CGflowchart/Coarsegraining-Flow";
+	valueDict["mdDir"] = "/home/rachael/cluster/scratch/ramansbach/coarsegraining/AA/DFAV/4_md";
+	valueDict["prepform"] = "y";
+	valueDict["pdbname"] = "testDFAI";
+	valueDict["rdictname"] = "resDict.txt";
+	valueDict["cdictname"] = "CAdict.txt";
+	valueDict["itpcorr"] = "y";
+	valueDict["ind1"] = "10";
+	valueDict["r1"] = "1";
+	valueDict["outxml"] = "CG_DFAV.xml";
+	valueDict["AAtop"] = "DFAI.top";
+	valueDict["CGtop"] = "Protein_rebond_reangle_reBB.itp";
+	valueDict["map"] = "mapping.ndx";
+	valueDict["molname"] = "DFAI";
+	valueDict["bbs"] = "1,3,7,8,10,11,13,14,15,17,18,22,20,19,23,25,26,30"; #list of back-bone beads in order, currently hardcoded for DFAI
+	valueDict["symdictname"] = "symdict.txt";
+	valueDict["votcainputname"] = "votcasyminput.txt";
+	valueDict["votcaNSinputname"] = "votcaNSinput.txt";
+	valueDict["mdtop"] = "md.tpr";
+	valueDict["mdtrj"] = "md.xtc";
+	valueDict["T"]="298"; #temperature to run VOTCA at
+	valueDict["votcafolder"] = "/home/rachael/coarsegraining/VOTCA/DFAI/240ns/"
+	end
+
+	valueDict = readValues(filename);	
+	bstem = valueDict["votcafolder"]*"hbs";
+	astem = valueDict["votcafolder"]*"has";
+	dstem = valueDict["votcafolder"]*"hds";
+	btem = valueDict["votcafolder"]*"hb";
+	atem = valueDict["votcafolder"]*"ha";
+	dtem = valueDict["votcafolder"]*"hd";
 	#function to step through the process
 	#currently prompts the user, need to add a version that runs from an input file
+	cd(valueDict["workingDir"]);
 	if prompts
 	println("Welcome to the DFAX parser.  This should step you through the process of
 	coarsegraining a molecule of the DFAX series, as well as testing the 
@@ -857,12 +1039,12 @@ function main(prompts=true)
 	prepare an atomistic .pdb file for running through martinize.py.  \n")
 	end
 	
-	if prompts prepform = input("Would you like to do this now? y/n "); end
-	if prepform == "y"
-		pdbname = input("What is the name of the pdb file? (without extension) ");
-		inname = pdbname*".pdb";
-		outname = pdbname*"mod.pdb";
-		renameRes(inname,outname,rdictname,cdictname);		
+	if prompts valueDict["prepform"] = input("Would you like to do this now? y/n "); end
+	if valueDict["prepform"] == "y"
+		valueDict["pdbname"] = input("What is the name of the pdb file? (without extension) ");
+		inname = valueDict["pdbname"]*".pdb";
+		outname = valueDict["pdbname"]*"mod.pdb";
+		renameRes(inname,outname,valueDict["rdictname"],valueDict["cdictname"]);		
 	end
 	if prompts 
 		println("Now that the pdb file is properly prepared, we can run martinize.py
@@ -873,13 +1055,13 @@ function main(prompts=true)
 	end
 	if prompts 
 	println("The .pdb file is correct, but the bonds and angles are not.  They have to be corrected.");
-	itpcorr = input("Would you like to do this now? y/n ");
+	valueDict["itpcorr"] = input("Would you like to do this now? y/n ");
 	end
-	if itpcorr == "y"
-		ind1 = int(input("What number residue marks the last residue before the aromatics? "));
-		reBond("Protein.itp","Protein_rebond.itp",ind1);
-		r1 = int(input("What is the index of the first backbone residue? "));
-		reAngle("Protein_rebond.itp","Protein_rebond_reangle.itp",r1,ind1);
+	if valueDict["itpcorr"] == "y"
+		valueDict["ind1"] = input("What number residue marks the last residue before the aromatics? ");
+		reBond("Protein.itp","Protein_rebond.itp",int(valueDict["ind1"]));
+		valueDict["r1"] = input("What is the index of the first backbone residue? ");
+		reAngle("Protein_rebond.itp","Protein_rebond_reangle.itp",int(valueDict["r1"]),int(valueDict["ind1"]));
 		copBB("Protein_rebond_reangle.itp","Protein_rebond_reangle_reBB.itp");				
 	end
 	if prompts
@@ -891,12 +1073,18 @@ function main(prompts=true)
 	if xmlrun == "y"
 		fnames = input("Would you like to input non-default file names? y/n");
 		if fnames == "y"
-			outxml = input("What is the name of the output xml file? ");
-			AAtop = input("What is the name of the atomistic topology file? ");
-			CGtop = input("What is the name of the coarsegrained itp file? ");
-			map = input("What is the name of the mapping index file? ");
+			valueDict["outxml"] = input("What is the name of the output xml file? ");
+			valueDict["AAtop"] = input("What is the name of the atomistic topology file? ");
+			valueDict["CGtop"] = input("What is the name of the coarsegrained itp file? ");
+			valueDict["map"] = input("What is the name of the mapping index file? ");
+			valueDict["molname"] = input("What is the name of molecule? ");
 		end
-		run(`python ../../make_xml.py -o $outxml -a $AAtop -c $CGtop -m $map `);
+		outxml = valueDict["outxml"];
+		AAtop = valueDict["AAtop"];
+		CGtop = valueDict["CGtop"];
+		map = valueDict["map"];
+		molname = valueDict["molname"];
+		run(`python /home/rachael/Analysis_and_run_code/coarsegraining/make_xml.py -o $outxml -a $AAtop -c $CGtop -m $map -n $molname`);
 	end
 	if prompts
 		println("Now we must prepare the input file that tells VOTCA which potentials to output.");
@@ -904,7 +1092,12 @@ function main(prompts=true)
 	end
 	if prepin == "y"
 		#bn,an,dn = getBondNumbers(outxml);
-		writeVotcaInput(symdictname,bbs,T,votcainputname,"Protein_rebond_reangle_reBB.itp");
+		symdictname = valueDict["symdictname"];
+		bbs = strListToIntList(valueDict["bbs"]);
+		T = int(valueDict["T"]);
+		votcainputname = valueDict["votcainputname"];
+		bondTable,angTable,dihTable = writeVotcaInput(symdictname,bbs,T,votcainputname,"Protein_rebond_reangle_reBB.itp");
+		writeVotcaInputNS(T,valueDict["votcaNSinputname"],"Protein_rebond_reangle_reBB.itp");
 	end
 	if prompts
 		println("Now that the input file is prepared, we can run VOTCA using the produced input and xml files.  This will produce a lot of data files and require knowing the locations of the trajectory and tpr files we want to analyze.");
@@ -919,8 +1112,58 @@ function main(prompts=true)
 			#println("Currently this functionality cannot be run from within the program.  Please run\n
 			#cat <votcainputname>) | csg_boltzmann --top <mdtop> --trj <mdtrj> --cg \"<outxml>;water.xml\"");
 			#run(`(cat $votcainputname) | csg_boltzmann --top $mdtop --trj $mdtrj --cg '$outxml;water.xml'`);
-			mat"runvotca(votcainputname,mdtop,mdtrj,outxml)";
+			votcainputname = valueDict["votcainputname"];
+			mdtop = valueDict["mdDir"]*valueDict["mdtop"];
+			mdtrj = valueDict["mdDir"]*valueDict["mdtrj"];
+			outxml = valueDict["outxml"];
+			votcainputNSname = valueDict["votcainputNSname"];
+			mat"runvotca($votcainputname,$mdtop,$mdtrj,$outxml)";
+			mat"runvotca($votcainputNSname,$mdtop,$mdtrj,$outxml)";
 		end
+	end
+	if prompts
+		visvot = input("We can now take a look at the output of VOTCA.  Would you like to prep these figures now? y/n");
+	end
+	if visvot == "y"
+		#bsinds = mxarray(Int32,length(values(bondTable)));
+		bsinds = Array(Int,length(values(bondTable)));
+		bc = 1;
+		for v in values(bondTable)
+			bsinds[bc] = v;
+			bc+=1;	
+		end
+		bsinds = mxarray(bsinds);
+		asinds = Array(Int,length(values(angTable)));
+		ac = 1;
+		for v in values(angTable)
+			asinds[ac] = v;
+			ac+=1;
+		end
+		asinds = mxarray(asinds);
+
+		dsinds = Array(Int,length(values(dihTable)));
+		dc = 1;
+		for v in values(dihTable)
+			dsinds[dc] = v;
+			dc+=1;
+		end
+		dsinds = mxarray(dsinds);
+		mat"save_hists($bsinds,$bstem,'');";
+		mat"save_hists($asinds,$astem,'');";
+		mat"save_hists($dsinds,$dstem,'');";
+			
+		angreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+;";
+        	dihreg = r"\s+\d+\s+\d+\s+\d+\s+\d+\s+[0-9a-zA-Z]+\s+[0-9a-zA-Z]+\s+[0-9a-zA-Z]+\s+;";
+		allbonds = readallbonds(valueDict["CGtop"]);
+		allangs = readallX(valueDict["CGtop"],angreg,true);
+		alldihs = readallX(valueDict["CGtop"],dihreg,false);
+		binds = mxarray(1:length(allbonds));
+		ainds = mxarray(1:length(allangs));
+		dinds = mxarray(1:length(alldihs));
+		mat"save_hists($binds,$btem,'');";
+		mat"save_hists($ainds,$atem,'');";
+		mat"save_hists($dinds,$dtem,'');";
+		
 	end
 
 end
